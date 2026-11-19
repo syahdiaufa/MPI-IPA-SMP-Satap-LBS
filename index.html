@@ -3030,9 +3030,14 @@
         box.innerHTML = `
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;flex-wrap:wrap;gap:0.5rem;">
             <span style="font-weight:800;color:#334155;">Total Rekaman UAS: ${uasRecords.length}</span>
-            <button type="button" class="btn-3d btn-rose" style="padding:0.45rem 0.9rem;font-size:0.82rem;" onclick="clearAllTeacherRecords('uas')">
-              <i class="fa-solid fa-trash-can"></i> Hapus Semua Data UAS
-            </button>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+              <button type="button" class="btn-3d btn-secondary" style="padding:0.45rem 0.9rem;font-size:0.82rem;" onclick="syncAllFromSpreadsheet()">
+                <i class="fa-solid fa-arrows-rotate"></i> Refresh Spreadsheet
+              </button>
+              <button type="button" class="btn-3d btn-rose" style="padding:0.45rem 0.9rem;font-size:0.82rem;" onclick="clearAllTeacherRecords('uas')">
+                <i class="fa-solid fa-trash-can"></i> Hapus Semua Data UAS
+              </button>
+            </div>
           </div>
           <div style="overflow-x:auto;">
             <table class="styled-table">
@@ -3079,9 +3084,14 @@
         box.innerHTML = `
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;flex-wrap:wrap;gap:0.5rem;">
             <span style="font-weight:800;color:#334155;">Total Rekaman Evaluasi Formatif: ${evalRecords.length}</span>
-            <button type="button" class="btn-3d btn-rose" style="padding:0.45rem 0.9rem;font-size:0.82rem;" onclick="clearAllTeacherRecords('eval')">
-              <i class="fa-solid fa-trash-can"></i> Hapus Semua Data Evaluasi
-            </button>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+              <button type="button" class="btn-3d btn-secondary" style="padding:0.45rem 0.9rem;font-size:0.82rem;" onclick="syncAllFromSpreadsheet()">
+                <i class="fa-solid fa-arrows-rotate"></i> Refresh Spreadsheet
+              </button>
+              <button type="button" class="btn-3d btn-rose" style="padding:0.45rem 0.9rem;font-size:0.82rem;" onclick="clearAllTeacherRecords('eval')">
+                <i class="fa-solid fa-trash-can"></i> Hapus Semua Data Evaluasi
+              </button>
+            </div>
           </div>
           <div style="overflow-x:auto;">
             <table class="styled-table">
@@ -3118,6 +3128,12 @@
           });
         });
         box.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;flex-wrap:wrap;gap:0.5rem;">
+            <span style="font-weight:800;color:#334155;">Total Siswa Terdaftar: ${no - 1}</span>
+            <button type="button" class="btn-3d btn-secondary" style="padding:0.45rem 0.9rem;font-size:0.82rem;" onclick="syncAllFromSpreadsheet()">
+              <i class="fa-solid fa-arrows-rotate"></i> Refresh Spreadsheet
+            </button>
+          </div>
           <div style="overflow-x:auto;">
             <table class="styled-table">
               <thead>
