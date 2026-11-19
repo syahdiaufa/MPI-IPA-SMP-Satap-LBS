@@ -2909,11 +2909,11 @@
         ...evalList.map(e => ({
           timestamp: e.timestamp,
           kategori: 'Evaluasi Formatif',
-          materi: e.aktivitas,
-          benar: e.benar ?? '-',
-          salah: e.salah ?? '-',
-          nilai: e.skor,
-          status: e.status
+          materi: e.aktivitas || e.materiAtauSemester || e.materi || e.jenisAsesmen || 'Evaluasi Formatif',
+          benar: e.benar ?? e.jumlahBenar ?? (e.correctCount ?? '-'),
+          salah: e.salah ?? e.jumlahSalah ?? (e.wrongCount ?? '-'),
+          nilai: e.skor ?? e.nilaiAkhir ?? e.nilai ?? 0,
+          status: e.status || (Number(e.skor ?? e.nilaiAkhir ?? 0) >= 75 ? 'Tuntas' : 'Remedial')
         }))
       ];
 
@@ -3061,24 +3061,32 @@
           </div>`;
       } else if (tabName === 'eval') {
         const evalRecords = JSON.parse(localStorage.getItem('libaru_ipa_records') || '[]');
-        let rows = evalRecords.slice().reverse().map((r, idx) => `
+        let rows = evalRecords.slice().reverse().map((r, idx) => {
+          const materiNama = r.aktivitas || r.materiAtauSemester || r.materi || r.jenisAsesmen || 'Evaluasi Formatif';
+          const nilaiAngka = r.skor ?? r.nilaiAkhir ?? r.nilai ?? '-';
+          const benarHitung = r.benar ?? r.jumlahBenar ?? (r.correctCount ?? '-');
+          const salahHitung = r.salah ?? r.jumlahSalah ?? (r.wrongCount ?? '-');
+          const statusTeks = r.status || (Number(nilaiAngka) >= 75 ? 'Tuntas' : 'Remedial');
+
+          return `
           <tr>
             <td>${idx + 1}</td>
-            <td>${r.timestamp}</td>
-            <td><strong>${r.nama}</strong></td>
-            <td>${r.kelas}</td>
-            <td>${r.aktivitas}</td>
-            <td style="color:#059669;font-weight:900;">${r.benar ?? '-'}</td>
-            <td style="color:#DC2626;font-weight:900;">${r.salah ?? '-'}</td>
-            <td style="font-weight:900;font-size:1.05rem;color:${r.skor >= 75 ? '#059669' : '#DC2626'};">${r.skor}</td>
-            <td>${r.status}</td>
+            <td>${r.timestamp || '-'}</td>
+            <td><strong>${r.nama || 'Siswa'}</strong></td>
+            <td>${r.kelas || '-'}</td>
+            <td>${materiNama}</td>
+            <td style="color:#059669;font-weight:900;">${benarHitung}</td>
+            <td style="color:#DC2626;font-weight:900;">${salahHitung}</td>
+            <td style="font-weight:900;font-size:1.05rem;color:${Number(nilaiAngka) >= 75 ? '#059669' : '#DC2626'};">${nilaiAngka}</td>
+            <td><span style="font-weight:900;color:${Number(nilaiAngka) >= 75 ? '#059669' : '#DC2626'};">${statusTeks}</span></td>
             <td>
               <button type="button" class="btn-3d btn-rose" style="padding:0.35rem 0.65rem;font-size:0.78rem;" onclick="deleteTeacherRecord('eval', '${r.id || idx}')">
                 <i class="fa-solid fa-trash"></i> Hapus
               </button>
             </td>
           </tr>
-        `).join('');
+        `;
+        }).join('');
         if (!rows) rows = `<tr><td colspan="10" style="text-align:center;color:#64748B;padding:1.2rem;">Belum ada data hasil pengerjaan Kuis Evaluasi Formatif.</td></tr>`;
 
         box.innerHTML = `
@@ -3227,7 +3235,19 @@
             localStorage.setItem('libaru_uas_records', JSON.stringify(json.uasRecords));
           }
           if (Array.isArray(json.evalRecords)) {
-            localStorage.setItem('libaru_ipa_records', JSON.stringify(json.evalRecords));
+            const normalizedEval = json.evalRecords.map(item => ({
+              ...item,
+              aktivitas: item.aktivitas || item.materiAtauSemester || item.materi || item.jenisAsesmen || 'Evaluasi Formatif',
+              materiAtauSemester: item.materiAtauSemester || item.aktivitas || item.materi || 'Evaluasi Formatif',
+              skor: item.skor ?? item.nilaiAkhir ?? item.nilai ?? 0,
+              nilaiAkhir: item.nilaiAkhir ?? item.skor ?? item.nilai ?? 0,
+              benar: item.benar ?? item.jumlahBenar ?? (item.correctCount ?? 0),
+              jumlahBenar: item.jumlahBenar ?? item.benar ?? (item.correctCount ?? 0),
+              salah: item.salah ?? item.jumlahSalah ?? (item.wrongCount ?? 0),
+              jumlahSalah: item.jumlahSalah ?? item.salah ?? (item.wrongCount ?? 0),
+              status: item.status || (Number(item.skor ?? item.nilaiAkhir ?? 0) >= 75 ? 'Tuntas' : 'Remedial')
+            }));
+            localStorage.setItem('libaru_ipa_records', JSON.stringify(normalizedEval));
           }
           switchTeacherTab(UASControlState.activeTab);
           Swal.fire({ icon: 'success', title: 'Tersinkronisasi!', text: 'Data siswa, pengaturan UAS, dan rekap nilai telah diperbarui dari Spreadsheet.', timer: 1500, showConfirmButton: false });
@@ -3246,10 +3266,14 @@
         csv += `"UAS","${r.timestamp}","${r.nama}","${r.kelas}","${r.semesterLabel}",${r.totalBenar},${r.totalSalah},${r.nilaiAkhir},"${r.status}"\n`;
       });
       evalRecords.forEach(r => {
-        csv += `"Evaluasi Formatif","${r.timestamp}","${r.nama}","${r.kelas}","${r.aktivitas}",${r.benar ?? 0},${r.salah ?? 0},${r.skor},"${r.status}"\n`;
-      });
-
-      const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+        const mat = r.aktivitas || r.materiAtauSemester || r.materi || 'Evaluasi Formatif';
+        const scr = r.skor ?? r.nilaiAkhir ?? r.nilai ?? 0;
+        const bnr = r.benar ?? r.jumlahBenar ?? 0;
+        const slh = r.salah ?? r.jumlahSalah ?? 0;
+        const st = r.status || (Number(scr) >= 75 ? 'Tuntas' : 'Remedial');
+        csv += `"Evaluasi Formatif","${r.timestamp || ''}","${r.nama || ''}","${r.kelas || ''}","${mat}",${bnr},${slh},${scr},"${st}"
+`;
+      });     const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = `Rekap_Nilai_IPA_SMP_Libaru_Sungkai_${new Date().toISOString().slice(0,10)}.csv`;
@@ -5464,10 +5488,16 @@ function launchQuizMode(mode) {
             nama: s.name,
             kelas: s.kelas,
             aktivitas: activityName,
+            materiAtauSemester: activityName,
+            materi: activityName,
             benar: jmlBenar,
+            jumlahBenar: jmlBenar,
             salah: jmlSalah,
+            jumlahSalah: jmlSalah,
             totalSoal: totalSoal,
             skor: finalScaled,
+            nilaiAkhir: finalScaled,
+            nilai: finalScaled,
             status: statusText
           });
 
