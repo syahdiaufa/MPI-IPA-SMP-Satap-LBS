@@ -2301,8 +2301,75 @@
       durationMinutes: Number(localStorage.getItem('libaru_uas_duration')) || 45,
       activeTab: 'uas',
       tkaSession: null,
-      timerInterval: null
+      timerInterval: null,
+      lastSyncedAt: null
     };
+
+    function applyRemoteUASSettings(settings) {
+      if (!settings || typeof settings !== 'object') return false;
+      const rawGate = String(settings.akses_uas ?? settings.uasAccess ?? '').trim().toUpperCase();
+      const hasGate = (rawGate === 'OPEN' || rawGate === 'TRUE' || rawGate === '1' || rawGate === 'BUKA' ||
+                       rawGate === 'CLOSED' || rawGate === 'FALSE' || rawGate === '0' || rawGate === 'TUTUP');
+      const remoteOpen = (rawGate === 'OPEN' || rawGate === 'TRUE' || rawGate === '1' || rawGate === 'BUKA');
+      const remoteDur = Number(settings.durasi_menit ?? settings.durationMinutes ?? settings.timerMin) || UASControlState.durationMinutes;
+
+      let changed = false;
+      if (hasGate && UASControlState.isOpen !== remoteOpen) {
+        UASControlState.isOpen = remoteOpen;
+        localStorage.setItem('libaru_uas_open', remoteOpen ? 'true' : 'false');
+        changed = true;
+      }
+      if (remoteDur > 0 && UASControlState.durationMinutes !== remoteDur) {
+        UASControlState.durationMinutes = remoteDur;
+        localStorage.setItem('libaru_uas_duration', String(remoteDur));
+        changed = true;
+      }
+      UASControlState.lastSyncedAt = new Date().toISOString();
+
+      if (changed) {
+        updateUASGateBadges();
+        if (typeof renderTopicCatalog === 'function') renderTopicCatalog();
+        if (typeof updateUASCardPreview === 'function') updateUASCardPreview();
+
+        const loginScreen = document.getElementById('screen-uas-login');
+        if (loginScreen && loginScreen.classList.contains('active')) {
+          if (!UASControlState.isOpen) {
+            if (typeof navGoHome === 'function') navGoHome();
+            Swal.fire({
+              icon: 'warning',
+              title: 'Akses UAS Ditutup Guru',
+              text: 'Sesi akses UAS telah ditutup oleh guru.',
+              timer: 1600,
+              showConfirmButton: false
+            });
+          } else {
+            const durLabel = document.getElementById('tka-login-duration-label');
+            if (durLabel) durLabel.innerText = `${UASControlState.durationMinutes} Menit`;
+            setTKASemester(AppState.selectedSemester || 1);
+          }
+        }
+      }
+      return changed;
+    }
+
+    async function syncUASAccessFromRemote(silent = true) {
+      const url = localStorage.getItem('libaru_gas_url') || DEFAULT_GAS_URL;
+      if (!url) return false;
+      try {
+        const sep = url.includes('?') ? '&' : '?';
+        const res = await fetch(`${url}${sep}action=getSettings&_=${Date.now()}`, { cache: 'no-store' });
+        if (!res.ok) return false;
+        const json = await res.json();
+        const settingsObj = (json && json.settings) ? json.settings : json;
+        if (settingsObj && typeof settingsObj === 'object') {
+          applyRemoteUASSettings(settingsObj);
+          return true;
+        }
+      } catch (err) {
+        if (!silent) console.warn('Sync UAS gagal:', err);
+      }
+      return false;
+    }
 
     function updateUASGateBadges() {
       const pill = document.getElementById('uas-gate-status-pill');
@@ -2323,7 +2390,7 @@
       if (gateInd) {
         gateInd.style.color = UASControlState.isOpen ? '#059669' : '#991B1B';
         gateInd.innerText = UASControlState.isOpen
-          ? 'Status Saat Ini: DIBUKA (Siswa dapat login dan mengerjakan UAS)'
+          ? 'Status Saat Ini: DIBUKA (Semua laptop/HP yang online dapat masuk UAS)'
           : 'Status Saat Ini: TERTUTUP (Siswa tidak dapat masuk menu UAS)';
       }
       const durInd = document.getElementById('teacher-duration-indicator');
@@ -2351,8 +2418,8 @@
         icon: UASControlState.isOpen ? 'success' : 'warning',
         title: UASControlState.isOpen ? 'Akses UAS Dibuka!' : 'Akses UAS Ditutup!',
         text: UASControlState.isOpen
-          ? 'Siswa sekarang dapat masuk ke Menu UAS dan mulai mengerjakan ujian.'
-          : 'Menu UAS telah dikunci kembali.',
+          ? 'Semua laptop/perangkat yang online otomatis dapat mengakses & login UAS.'
+          : 'Menu UAS telah dikunci kembali di seluruh perangkat.',
         timer: 1500,
         showConfirmButton: false
       });
@@ -2377,106 +2444,9 @@
       });
     }
 
-    /* ========================================================
-       PERAKIT 40 SOAL UAS TKA (25 PG A-D, 10 BENAR/SALAH, 5 ISIAN SINGKAT)
-       ======================================================== */
-    function buildTKAUASQuestions(grade, sem) {
-      const key = `${grade}_${sem}`;
-      // Untuk Semester 1 (7_1, 8_1, 9_1) gunakan Bank 60 Soal Resmi dari PDF "SOAL UAS 7 8 9 MPI.pdf"
-      if (OFFICIAL_UAS_BANK_SEM1[key] && OFFICIAL_UAS_BANK_SEM1[key].length >= 60) {
-        const bank60 = shuffleArray(OFFICIAL_UAS_BANK_SEM1[key]);
-        const partPG = bank60.slice(0, 25);
-        const partBS = bank60.slice(25, 35);
-        const partIsian = bank60.slice(35, 40);
-
-        const formattedPG = partPG.map((item, idx) => {
-          const rawOpts = item.opts.map(o => String(o).replace(/^[A-D]\.\s*/, ''));
-          const pairs = rawOpts.map((text, i) => ({ text, correct: i === item.ans }));
-          const shuffled = shuffleArray(pairs);
-          return {
-            num: idx + 1,
-            type: 'pg',
-            bab: item.bab,
-            q: item.q,
-            opts: shuffled.map((p, i) => `${String.fromCharCode(65 + i)}. ${p.text}`),
-            ans: shuffled.findIndex(p => p.correct),
-            userAnswer: null,
-            ragu: false
-          };
-        });
-
-        const formattedBS = partBS.map((item, idx) => ({
-          num: 26 + idx,
-          type: 'bs',
-          bab: item.bab,
-          q: item.bs_q,
-          opts: ['BENAR', 'SALAH'],
-          ans: item.bs_ans,
-          userAnswer: null,
-          ragu: false
-        }));
-
-        const formattedIsian = partIsian.map((item, idx) => ({
-          num: 36 + idx,
-          type: 'isian',
-          bab: item.bab,
-          q: item.isian_q,
-          valid: item.isian_valid,
-          userAnswer: '',
-          ragu: false
-        }));
-
-        return [...formattedPG, ...formattedBS, ...formattedIsian];
-      }
-
-      // Untuk Semester 2 (7_2, 8_2, 9_2) rakit 25 PG + 10 Benar/Salah + 5 Isian dari seluruh bab semester 2
-      const topics = atpDatabase[key] || [];
-      let poolPG = [], poolBS = [], poolIsian = [];
-      topics.forEach(t => {
-        const mod = getModule(t.id);
-        poolPG = poolPG.concat(generateTopicQuestionsPG(mod).map(q => ({ ...q, bab: mod.name, q: q.q.replace(/^\[Soal[^\]]*\]\s*/, '') })));
-        poolBS = poolBS.concat(generateTopicQuestionsBS(mod).map(q => ({ ...q, bab: mod.name })));
-        poolIsian = poolIsian.concat(generateTopicQuestionsIsian(mod).map(q => ({ ...q, bab: mod.name, q: q.q.replace(/^\[(Soal|Isian)[^\]]*\]\s*/, '') })));
-      });
-
-      const formattedPG = shuffleArray(poolPG).slice(0, 25).map((item, idx) => ({
-        num: idx + 1,
-        type: 'pg',
-        bab: item.bab,
-        q: item.q,
-        opts: item.opts,
-        ans: item.ans,
-        userAnswer: null,
-        ragu: false
-      }));
-      const formattedBS = shuffleArray(poolBS).slice(0, 10).map((item, idx) => ({
-        num: 26 + idx,
-        type: 'bs',
-        bab: item.bab,
-        q: item.q,
-        opts: ['BENAR', 'SALAH'],
-        ans: item.ans,
-        userAnswer: null,
-        ragu: false
-      }));
-      const formattedIsian = shuffleArray(poolIsian).slice(0, 5).map((item, idx) => ({
-        num: 36 + idx,
-        type: 'isian',
-        bab: item.bab,
-        q: item.q,
-        valid: item.valid,
-        userAnswer: '',
-        ragu: false
-      }));
-
-      return [...formattedPG, ...formattedBS, ...formattedIsian];
-    }
-
-    /* ========================================================
-       ALUR MASUK MENU UAS (CEK STATUS BUKA/TUTUP -> LOGIN TKA -> EXAM TKA)
-       ======================================================== */
-    function openUASPrep(grade, sem) {
+    async function openUASPrep(grade, sem) {
       SoundEngine.playClick();
+      await syncUASAccessFromRemote(true);
       if (!UASControlState.isOpen) {
         Swal.fire({
           icon: 'warning',
@@ -2528,7 +2498,8 @@
       namaSel.innerHTML = list.map(n => `<option value="${n}">${n}</option>`).join('');
     }
 
-    function startTKAExamSession() {
+    async function startTKAExamSession() {
+      await syncUASAccessFromRemote(true);
       if (!UASControlState.isOpen) {
         Swal.fire('Akses Ditutup', 'Akses UAS telah ditutup oleh guru.', 'error');
         navGoHome();
@@ -6042,6 +6013,29 @@ function launchQuizMode(mode) {
       renderStudentInputs();
       openTopic('pengukuran-7-1');
       navGoHome();
+
+      // Sinkronisasi otomatis status akses UAS dari satu laptop guru ke semua laptop online
+      syncUASAccessFromRemote(true);
+      setInterval(() => {
+        if (document.visibilityState === 'visible') {
+          syncUASAccessFromRemote(true);
+        }
+      }, 5000);
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          syncUASAccessFromRemote(true);
+        }
+      });
+
+      window.addEventListener('storage', (e) => {
+        if (e.key === 'libaru_uas_open' || e.key === 'libaru_uas_duration') {
+          UASControlState.isOpen = localStorage.getItem('libaru_uas_open') === 'true';
+          UASControlState.durationMinutes = Number(localStorage.getItem('libaru_uas_duration')) || 45;
+          updateUASGateBadges();
+          if (typeof renderTopicCatalog === 'function') renderTopicCatalog();
+        }
+      });
     });
   </script>
 <style>
